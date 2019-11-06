@@ -76,7 +76,6 @@ int main(int argc, char **argv)
 	pthread_create(&tid[1], NULL, thread2, &t);
 
 	pthread_join(tid[0], NULL);
-	printf("finished join1\n");
 	pthread_join(tid[1], NULL);
 
 	int check1 = sem_destroy(t.sem1);

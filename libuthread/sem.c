@@ -42,16 +42,26 @@ int sem_down(sem_t sem)
     //printf("sem is not null\n");
     enter_critical_section();
     //printf("enter critical count is %zu\n", sem->count);
-    if (sem->count == 0){
-        //printf("sem is not null\n");
-        int check = queue_enqueue(sem->block_q, (void*)pthread_self());
-        //printf("enqueue success \n");
-        //MARK:- detele this when finish debuging
-        assert(check == 0);
-        sem->block_count += 1;
-        /* thread_block will exit critical section by itself */
-        //printf("check success \n");
-        thread_block();
+    // if (sem->count == 0){
+    //     //printf("sem is not null\n");
+    //     int check = queue_enqueue(sem->block_q, (void*)pthread_self());
+    //     //printf("enqueue success \n");
+    //     //MARK:- detele this when finish debuging
+    //     assert(check == 0);
+    //     sem->block_count += 1;
+    //     /* thread_block will exit critical section by itself */
+    //     //printf("check success \n");
+    //     thread_block();
+    // }
+    while (sem->count == 0){
+      int check = queue_enqueue(sem->block_q, (void*)pthread_self());
+      //printf("enqueue success \n");
+      //MARK:- detele this when finish debuging
+      assert(check == 0);
+      sem->block_count += 1;
+      /* thread_block will exit critical section by itself */
+      //printf("check success \n");
+      thread_block();
     }
     //printf("count is: %zu\n", sem->count);
     sem->count -= 1;
