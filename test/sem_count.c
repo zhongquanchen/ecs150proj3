@@ -12,7 +12,7 @@
 #include <stdlib.h>
 
 #include <sem.h>
-
+#include <assert.h>
 #define MAXCOUNT 20
 
 struct test3 {
@@ -76,10 +76,13 @@ int main(int argc, char **argv)
 	pthread_create(&tid[1], NULL, thread2, &t);
 
 	pthread_join(tid[0], NULL);
+	printf("finished join1\n");
 	pthread_join(tid[1], NULL);
 
-	sem_destroy(t.sem1);
-	sem_destroy(t.sem2);
+	int check1 = sem_destroy(t.sem1);
+	int check2 = sem_destroy(t.sem2);
+
+	assert(check1 == 0 && check2 == 0);
 
 	return 0;
 }

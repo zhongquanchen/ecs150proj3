@@ -29,12 +29,13 @@ struct test4 {
 
 static void *consumer(void* arg)
 {
+	//printf("I am in consumer\n");
 	struct test4 *t = (struct test4*)arg;
 	size_t out = 0;
 
 	while (out < t->maxcount - 1) {
 		size_t i, n = rand_r(&t->cons_seed) % BUFFER_SIZE + 1;
-
+		//printf("n is %zu, maxcount is %zu, out is %zu\n", n, t->maxcount, out);
 		n = clamp(n, t->maxcount - out - 1);
 		printf("Consumer wants to get %zu items out of buffer...\n", n);
 		for (i = 0; i < n; i++) {
@@ -54,21 +55,27 @@ static void *consumer(void* arg)
 
 static void *producer(void* arg)
 {
+	//printf("I am in producer\n");
 	struct test4 *t = (struct test4*)arg;
 	size_t count = 0;
 
 	while (count < t->maxcount) {
 		size_t i, n = rand_r(&t->prod_seed) % BUFFER_SIZE + 1;
+		printf("n is %zu,\n", n);
 		n = clamp(n, t->maxcount - count);
-
+		//printf("n is %zu, maxcount is %zu,\n", n, t->maxcount);
 		printf("Producer wants to put %zu items into buffer...\n", n);
 		for (i = 0; i < n; i++) {
+			//printf("i is %zu\n", i);
+			/* t->full is the BUFFER_SIZE*/
 			sem_down(t->full);
 			printf("Producer is putting %zu into buffer\n", count);
 			t->buffer[t->head] = count++;
 			t->head = (t->head + 1) % BUFFER_SIZE;
 			sem_down(t->mutex);
+			//printf("i am in sem_down mutex\n");
 			t->size++;
+			//printf("i am in after size ++\n");
 			sem_up(t->mutex);
 			sem_up(t->empty);
 		}

@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include "queue.h"
 #include "sem.h"
@@ -35,18 +36,24 @@ int sem_destroy(sem_t sem)
 
 int sem_down(sem_t sem)
 {
+    //printf("i am in sem_down\n");
     if (sem == NULL)
         return -1;
-
+    //printf("sem is not null\n");
     enter_critical_section();
+    //printf("enter critical count is %zu\n", sem->count);
     if (sem->count == 0){
+        //printf("sem is not null\n");
         int check = queue_enqueue(sem->block_q, (void*)pthread_self());
+        //printf("enqueue success \n");
         //MARK:- detele this when finish debuging
         assert(check == 0);
         sem->block_count += 1;
         /* thread_block will exit critical section by itself */
+        //printf("check success \n");
         thread_block();
     }
+    //printf("count is: %zu\n", sem->count);
     sem->count -= 1;
     exit_critical_section();
     return 0;
@@ -59,15 +66,15 @@ int sem_up(sem_t sem)
 
     enter_critical_section();
     if (sem->count == 0){
-        if (sem->block_q == NULL)
-            return -1;
-
-        pthread_t* will_unblock = malloc(sizeof(pthread_t));
-        int check = queue_dequeue(sem->block_q, (void**)will_unblock);
-        assert(check == 0);
-        thread_unblock(*will_unblock);
+        if (queue_length(sem->block_q) != 0){
+            pthread_t* will_unblock = malloc(sizeof(pthread_t));
+            int check = queue_dequeue(sem->block_q, (void**)will_unblock);
+            assert(check == 0);
+            thread_unblock(*will_unblock);
+        }
     }
     sem->count += 1;
+    //printf("sem->count : %zu\n", sem->count);
     exit_critical_section();
     return 0;
 }
