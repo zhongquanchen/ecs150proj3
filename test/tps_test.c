@@ -14,11 +14,11 @@ static char msg[TPS_SIZE] = "Hello World!\n";
 void *thread1(void* arg)
 {
 	char* buffer = malloc(TPS_SIZE);
-	printf("successed enter thread1 and creating tps\n");
+	// printf("successed enter thread1 and creating tps\n");
 	int check_create = tps_create();
 	assert(check_create == 0);
 	printf("after assert create tps\n");
-	
+
 	tps_write(0, TPS_SIZE, msg);
 
 
