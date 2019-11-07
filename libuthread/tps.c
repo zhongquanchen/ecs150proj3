@@ -47,20 +47,25 @@ int tps_create(void)
     pthread_t cur_thread = pthread_self();
     TPS* exist_tps = NULL;
     int check = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
-    if (check == 1 && check == -1){
+    if (check == 1 || check == -1){
         printf("queue_iterate fail tps : 50, function return %d\n", check);
+        exit_critical_section();
         return -1;
     }
 
     /* if it exist a tps in map, it will never run the following
      * otherwise it will create a map using mmap() */
     TPS* tps = malloc(sizeof(TPS));
-    tps->map_addr = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
-                        MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (tps->map_addr == MAP_FAILED)
-        return -1;
-    queue_enqueue(MMAPS, (void*)tps);
+    tps->map_addr = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE,
+                        	MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (tps->map_addr == MAP_FAILED){
+    	printf("create map fail in tps.c line 62\n");
+	return -1;
+    }
 
+    if (tps == NULL) {printf("tps is a null and enqueue in\n");}
+    int check_enq = queue_enqueue(MMAPS, (void*)tps);
+    assert(check_enq == 0);
     exit_critical_section();
     return 0;
 }
@@ -100,7 +105,7 @@ int tps_read(size_t offset, size_t length, char *buffer)
     TPS* exist_tps = NULL;
     pthread_t cur_thread = pthread_self();
     int check = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
-    if(check == 0 && check == -1){
+    if(check == 0 || check == -1){
         printf("queue_iterate fail tps.c : 100\n");
         exit_critical_section();
         return -1;
@@ -126,11 +131,16 @@ int tps_read(size_t offset, size_t length, char *buffer)
 
 int tps_write(size_t offset, size_t length, char *buffer)
 {
+    printf("enter tps write\n");
     enter_critical_section();
     TPS* exist_tps = NULL;
     pthread_t cur_thread = pthread_self();
     int check = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
-    if(check == 0 && check == -1){
+    
+    printf("check is : %d\n", check); 
+    if(exist_tps == NULL) { printf("FUCK\n"); }
+
+    if(check == 0 || check == -1){
         printf("queue_iterate fail tps.c : 100\n");
         exit_critical_section();
         return -1;
@@ -147,10 +157,20 @@ int tps_write(size_t offset, size_t length, char *buffer)
         exit_critical_section();
         return -1;
     }
+    
+    printf("going in memcpy\n");
+    printf("printing lenght %zu\n", length);
+    printf("printf buffer %s\n", buffer);
+    if (exist_tps == NULL){
+    	printf("ye zhi zhen\n");
+    } 
+    printf("printf exist_tps->map_addr %ld\n", exist_tps->tid);
+
+    
 
     /* Copies "numBytes" bytes from address "from" to address "to"
      * void * memcpy(void *to, const void *from, size_t numBytes); */
-    memcpy(exist_tps->map_addr + offset, buffer, length);
+    memcpy((void*)(exist_tps->map_addr + offset), (void*)buffer, length);
     exit_critical_section();
     return 0;
 }
