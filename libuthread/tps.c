@@ -205,6 +205,7 @@ int tps_clone(pthread_t tid)
     if (cur_tps->map_addr == MAP_FAILED)
         return -1;
     memcpy((void*)(cur_tps->map_addr), (void*)(target_tps->map_addr), MMAP_SIZE);
+    cur_tps->tid = pthread_self();
     int check_cur = queue_enqueue(MMAPS, (void*)cur_tps);
     if (check_cur == -1){
         printf("enqueue fail tps.c : 168 \n");
