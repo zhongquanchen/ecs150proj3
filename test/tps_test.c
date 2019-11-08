@@ -17,21 +17,20 @@ void *thread1(void* arg)
 	// printf("successed enter thread1 and creating tps\n");
 	int check_create = tps_create();
 	assert(check_create == 0);
-	printf("after assert create tps\n");
+	// printf("after assert create tps\n");
 
 	tps_write(0, TPS_SIZE, msg);
-
 
 	memset(buffer, 0, TPS_SIZE);
 	tps_read(0, TPS_SIZE, buffer);
 	assert(!memcmp(msg, buffer, TPS_SIZE));
-	printf("thread2: read OK!\n");
+	printf("thread1: read OK!\n");
 
 	tps_destroy();
 	free(buffer);
-
 	return NULL;
 }
+
 
 int main()
 {

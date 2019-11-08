@@ -14,6 +14,8 @@
 
 #define MMAP_SIZE 4096
 
+enum FLAG {CLONE, NORMAL, MODIFY};
+
 static queue_t MMAPS;
 
 typedef struct Page {
@@ -76,21 +78,41 @@ static void segv_handler(int sig, siginfo_t *si, void *context)
     raise(sig);
 }
 
-int page_create(TPS* tps)
+int page_create(TPS* tps, int flag)
 {
-    printf("try create page\n");
-    tps->page->counter = 1;
-    printf("after create counter\n");
-    tps->page = malloc(sizeof(Page));
-    tps->page->map_addr = mmap(NULL, TPS_SIZE, PROT_NONE,
-                          MAP_PRIVATE | MAP_ANON, -1, 0);
-
-    printf("after malloc page\n");
-
-    if(tps->page->map_addr == MAP_FAILED){
-        printf("create mmap fail at tps.c line 86\n");
-        return -1;
+    if (flag == CLONE){
+        tps->page = NULL;
+    }else{
+        if (tps->page != NULL) {
+            printf("tps->page is not null so free it");
+            free(tps->page);
+        }
+        tps->page = malloc(sizeof(Page));
+        tps->page->counter = 1;
+        tps->page->map_addr = mmap(NULL, TPS_SIZE, PROT_NONE,
+                            MAP_PRIVATE | MAP_ANON, -1, 0);
+        if(tps->page->map_addr == MAP_FAILED){
+            printf("create mmap fail at tps.c line 86\n");
+            return -1;
+        }
     }
+    return 0;
+}
+
+int Copy_On_Write(TPS* tps)
+{
+    Page* temp_page = malloc(sizeof(Page));
+    temp_page->counter = 1;
+    temp_page->map_addr = mmap(NULL, TPS_SIZE, PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANON, -1, 0);
+
+    mprotect(tps->page->map_addr, TPS_SIZE, PROT_READ);
+    memcpy((void*)temp_page->map_addr, (void*)tps->page->map_addr, TPS_SIZE);
+    mprotect(tps->page->map_addr, TPS_SIZE, PROT_NONE);
+    mprotect(temp_page->map_addr, TPS_SIZE, PROT_NONE);
+
+    tps->page = temp_page;
+
     return 0;
 }
 
@@ -130,7 +152,7 @@ int tps_create(void)
     TPS* tps = malloc(sizeof(TPS));
     tps->tid = pthread_self();
 
-    int check_page = page_create(tps);
+    int check_page = page_create(tps, NORMAL);
     if (check_page == -1 || tps->page->counter != 1 || tps->page == NULL){
         printf("create page error at tps.c at line 132\n");
         return -1;
@@ -198,6 +220,10 @@ int tps_read(size_t offset, size_t length, char *buffer)
 
     /* Copies "numBytes" bytes from address "from" to address "to"
      * void * memcpy(void *to, const void *from, size_t numBytes); */
+    if (exist_tps->page->map_addr == NULL){
+        printf("doesn't exist\n");
+    }
+
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_READ);
     memcpy((void*)buffer, (void*)(exist_tps->page->map_addr + offset), length);
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_NONE);
@@ -231,11 +257,16 @@ int tps_write(size_t offset, size_t length, char *buffer)
         return -1;
     }
 
+    if (exist_tps->page->counter > 1){
+        Copy_On_Write(exist_tps);
+    }
+
     /* Copies "numBytes" bytes from address "from" to address "to"
      * void * memcpy(void *to, const void *from, size_t numBytes); */
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_WRITE);
     memcpy((void*)(exist_tps->page->map_addr + offset), (void*)buffer, length);
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_NONE);
+    //printf("%s", (char*)(exist_tps->page->map_addr));
     exit_critical_section();
     return 0;
 }
@@ -266,17 +297,14 @@ int tps_clone(pthread_t tid)
     cur_tps = malloc(sizeof(TPS));
     cur_tps->tid = pthread_self();
 
-    int check_create = page_create(cur_tps);
-    if (check_create == -1 || cur_tps->page->counter != 1 || cur_tps->page->map_addr == NULL){
+    int check_create = page_create(cur_tps, CLONE);
+    if (check_create == -1){
         printf("create page error at tps.c at line 267\n");
         return -1;
     }
 
-    mprotect(target_tps->page->map_addr, TPS_SIZE, PROT_READ);
-    memcpy((void*)(cur_tps->page->map_addr), (void*)(target_tps->page->map_addr), MMAP_SIZE);
-    mprotect(cur_tps->page->map_addr, TPS_SIZE, PROT_NONE);
-    mprotect(target_tps->page->map_addr, TPS_SIZE, PROT_NONE);
-
+    target_tps->page->counter ++;
+    cur_tps->page = target_tps->page;
 
     int check_cur = queue_enqueue(MMAPS, (void*)cur_tps);
     if (check_cur == -1){
