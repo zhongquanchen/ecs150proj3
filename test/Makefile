@@ -5,7 +5,8 @@ programs := \
 	sem_prime.x \
 	tps.x \
 	tps_test.x \
-	tps_clone_test.x
+	tps_clone_test.x \
+	tps_stress.x
 
 # User-level thread library
 UTHREADLIB := libuthread
