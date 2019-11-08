@@ -14,7 +14,11 @@
 
 #define MMAP_SIZE 4096
 
-enum FLAG {CLONE, NORMAL, MODIFY};
+/* @CLONE means to tell tps_write function that you want to make a clone
+ * it will reference to the same page as the clone object
+ * @NORMAL means to create a memory page
+ */
+enum FLAG {CLONE, NORMAL};
 
 static queue_t MMAPS;
 
@@ -31,23 +35,23 @@ typedef struct TPS {
 /* helper function to find a thread of certain pid
  * Also used in project 2 by Zhongquan Chen group
  * [link] https://github.com/zhongquanchen/ecs150proj2/blob/81007dd70e552f215751c4e8aec464e3aa7b957b/libuthread/uthread.c#L44
+ * Return 1 if found the same @arg in @data, 0 otherwise
  */
 static int find_tid(void* data, void* arg)
 {
     pthread_t tid = (*(pthread_t*)arg);
     TPS* cur_tps = (TPS*)data;
-
-    // printf("cur_tps->tid : %ld\n", cur_tps->tid);
-    // printf("tid is :%ld\n", tid);
     if ( cur_tps->tid == tid )
         return 1;
     return 0;
 }
 
+/* helper function to find signal fault from certain map_addr
+ * Return 1 if found signal the same @arg in @data which is the head of map_addr
+ * 0 otherwise */
 static int find_sig(void* data, void* arg)
 {
     TPS* cur_tps = (TPS*)data;
-
     if(cur_tps->page->map_addr == arg)
         return -1;
     return 0;
@@ -78,6 +82,11 @@ static void segv_handler(int sig, siginfo_t *si, void *context)
     raise(sig);
 }
 
+/* the function will create allocate a struct Page memeory
+ * set up mmap in page->map_addr --- will set up a page of memory
+ * @tps is the struct that you want to assign a page to it
+ * @flag is the signal you tell to do certain perform
+ */
 int page_create(TPS* tps, int flag)
 {
     if (flag == CLONE){
@@ -99,23 +108,34 @@ int page_create(TPS* tps, int flag)
     return 0;
 }
 
+/* @tps is the TPS struct that you want to copy to
+ * this function will copy itself and have it own memory page
+ * return 0 on sccueed
+ */
 int Copy_On_Write(TPS* tps)
 {
+    /* malloc a address space for a new page */
     Page* temp_page = malloc(sizeof(Page));
     temp_page->counter = 1;
     temp_page->map_addr = mmap(NULL, TPS_SIZE, PROT_WRITE,
                         MAP_PRIVATE | MAP_ANON, -1, 0);
 
+    /* copy the original copy to new page, and change permission */
     mprotect(tps->page->map_addr, TPS_SIZE, PROT_READ);
     memcpy((void*)temp_page->map_addr, (void*)tps->page->map_addr, TPS_SIZE);
     mprotect(tps->page->map_addr, TPS_SIZE, PROT_NONE);
     mprotect(temp_page->map_addr, TPS_SIZE, PROT_NONE);
 
+    /* change the original reference page to the new copied page */
     tps->page = temp_page;
 
     return 0;
 }
 
+/* Call this functiont ot initialize the setting, must call before using
+ * other method
+ * @segv = 1 to turn on the signal handling
+ */
 int tps_init(int segv)
 {
     MMAPS = queue_create();
@@ -132,11 +152,11 @@ int tps_init(int segv)
     return 0;
 }
 
+/* To create a thread private storage */
 int tps_create(void)
 {
     enter_critical_section();
     /* to check if there already exist a tps in map */
-
     pthread_t cur_thread = pthread_self();
     TPS* exist_tps = NULL;
     int check = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
@@ -145,7 +165,6 @@ int tps_create(void)
         exit_critical_section();
         return -1;
     }
-    // printf("print check in creation tps :%d", check);
 
     /* if it exist a tps in map, it will never run the following
      * otherwise it will create a map using mmap() */
@@ -159,13 +178,16 @@ int tps_create(void)
     }
 
     int check_enq = queue_enqueue(MMAPS, (void*)tps);
+    exit_critical_section();
+
     if (check_enq != 0)
         return -1;
-
-    exit_critical_section();
     return 0;
 }
 
+/* Call tps_destroy to deallocate the space tps takes
+ * return 1 on succeed -1 otherwise
+ */
 int tps_destroy(void)
 {
     enter_critical_section();
@@ -175,18 +197,21 @@ int tps_destroy(void)
     int check_iter = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
     if (check_iter == 0 && check_iter == -1){
         printf("queue_iterate fail tps : 74, function return %d\n", check_iter);
+        exit_critical_section();
         return -1;
     }
 
     int check_rmmap = munmap((void*)exist_tps->page->map_addr, MMAP_SIZE);
     if(check_rmmap == -1){
         printf("removing map address fail tps.c : 79\n");
+        exit_critical_section();
         return -1;
     }
 
     int check_del = queue_delete(MMAPS, (void*)exist_tps);
     if (check_del == -1){
         printf("queue_delete fail at tps.c :79\n");
+        exit_critical_section();
         return -1;
     }
 
@@ -195,6 +220,11 @@ int tps_destroy(void)
     return 0;
 }
 
+/* tps_read perform reading from the tps memory page
+ * @offset, where you want to start from the memory page
+ * @length, how long you want to read from memory page
+ * @buffer, the buffer where to store the output of memory page
+ */
 int tps_read(size_t offset, size_t length, char *buffer)
 {
     enter_critical_section();
@@ -224,6 +254,7 @@ int tps_read(size_t offset, size_t length, char *buffer)
         printf("doesn't exist\n");
     }
 
+    /* change protection and perform a copy to buffer */
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_READ);
     memcpy((void*)buffer, (void*)(exist_tps->page->map_addr + offset), length);
     mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_NONE);
@@ -231,14 +262,18 @@ int tps_read(size_t offset, size_t length, char *buffer)
     return 0;
 }
 
+/* tps_write perform writing from the buffer to the tps memory page
+ * @offset, where you want to start from the memory page
+ * @length, how long you want to read from memory page
+ * @buffer, the buffer where info input
+ */
 int tps_write(size_t offset, size_t length, char *buffer)
 {
-    //printf("enter tps write\n");
+    /* to check if current thread has a TPS to write on */
     enter_critical_section();
     TPS* exist_tps = NULL;
     pthread_t cur_thread = pthread_self();
     int check = queue_iterate(MMAPS, find_tid, (void*)&cur_thread, (void**)&exist_tps);
-    //printf("check in write_tps :%d", check);
     if(check == -1){
         printf("queue_iterate fail tps.c : 100\n");
         exit_critical_section();
@@ -257,6 +292,9 @@ int tps_write(size_t offset, size_t length, char *buffer)
         return -1;
     }
 
+    /* if the tps is clone from other original mem page, it will need to perform
+     * a Copy_On_Write before writing to it
+     */
     if (exist_tps->page->counter > 1){
         Copy_On_Write(exist_tps);
     }
@@ -271,6 +309,9 @@ int tps_write(size_t offset, size_t length, char *buffer)
     return 0;
 }
 
+/* @tid is the clone object you wants to copy from
+ * the function will create a new tps mem page and clone it from @tid
+ */
 int tps_clone(pthread_t tid)
 {
     enter_critical_section();
@@ -305,7 +346,7 @@ int tps_clone(pthread_t tid)
 
     target_tps->page->counter ++;
     cur_tps->page = target_tps->page;
-
+    /* have the tps object enqueue into the global queue */
     int check_cur = queue_enqueue(MMAPS, (void*)cur_tps);
     if (check_cur == -1){
         printf("enqueue fail tps.c : 168 \n");

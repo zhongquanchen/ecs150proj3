@@ -7,6 +7,9 @@
 #include <tps.h>
 #include <sem.h>
 
+/* simple test to check if tps_clone works
+ */
+
 static char msg[TPS_SIZE] = "Hello World!\n";
 pthread_t tid1, tid2;
 
@@ -28,10 +31,8 @@ void *thread2(void* arg)
 void *thread1(void* arg)
 {
   	char* buffer = malloc(TPS_SIZE);
-  	// printf("successed enter thread1 and creating tps\n");
   	int check_create = tps_create();
   	assert(check_create == 0);
-  	// printf("after assert create tps\n");
 
   	tps_write(0, TPS_SIZE, msg);
 
