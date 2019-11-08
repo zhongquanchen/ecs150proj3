@@ -16,8 +16,13 @@
 
 static queue_t MMAPS;
 
+typedef struct Page {
+    void * map_addr;
+    int counter;
+} Page;
+
 typedef struct TPS {
-    void* map_addr;
+    Page* page;
     pthread_t tid;
 } TPS;
 
@@ -32,8 +37,59 @@ static int find_tid(void* data, void* arg)
 
     // printf("cur_tps->tid : %ld\n", cur_tps->tid);
     // printf("tid is :%ld\n", tid);
-    if ( cur_tps->tid == tid ){
+    if ( cur_tps->tid == tid )
         return 1;
+    return 0;
+}
+
+static int find_sig(void* data, void* arg)
+{
+    TPS* cur_tps = (TPS*)data;
+
+    if(cur_tps->page->map_addr == arg)
+        return -1;
+    return 0;
+}
+
+static void segv_handler(int sig, siginfo_t *si, void *context)
+{
+    TPS* exist_tps = NULL;
+    /*
+     * Get the address corresponding to the beginning of the page where the
+     * fault occurred
+     */
+    void *p_fault = (void*)((uintptr_t)si->si_addr & ~(TPS_SIZE - 1));
+
+    /*
+     * Iterate through all the TPS areas and find if p_fault matches one of them
+     */
+     queue_iterate(MMAPS, find_sig, (void*)p_fault, (void**)&exist_tps );
+
+    if (exist_tps != NULL)
+        /* Printf the following error message */
+        fprintf(stderr, "TPS protection error!\n");
+
+    /* In any case, restore the default signal handlers */
+    signal(SIGSEGV, SIG_DFL);
+    signal(SIGBUS, SIG_DFL);
+    /* And transmit the signal again in order to cause the program to crash */
+    raise(sig);
+}
+
+int page_create(TPS* tps)
+{
+    printf("try create page\n");
+    tps->page->counter = 1;
+    printf("after create counter\n");
+    tps->page = malloc(sizeof(Page));
+    tps->page->map_addr = mmap(NULL, TPS_SIZE, PROT_NONE,
+                          MAP_PRIVATE | MAP_ANON, -1, 0);
+
+    printf("after malloc page\n");
+
+    if(tps->page->map_addr == MAP_FAILED){
+        printf("create mmap fail at tps.c line 86\n");
+        return -1;
     }
     return 0;
 }
@@ -41,6 +97,16 @@ static int find_tid(void* data, void* arg)
 int tps_init(int segv)
 {
     MMAPS = queue_create();
+    if (segv) {
+        struct sigaction sa;
+
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_SIGINFO;
+        sa.sa_sigaction = segv_handler;
+        sigaction(SIGBUS, &sa, NULL);
+        sigaction(SIGSEGV, &sa, NULL);
+    }
+
     return 0;
 }
 
@@ -64,17 +130,16 @@ int tps_create(void)
     TPS* tps = malloc(sizeof(TPS));
     tps->tid = pthread_self();
 
-    tps->map_addr = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE,
-                        	MAP_PRIVATE | MAP_ANON, -1, 0);
-
-    if (tps->map_addr == MAP_FAILED){
-    	   printf("create map fail in tps.c line 62\n");
-	       return -1;
+    int check_page = page_create(tps);
+    if (check_page == -1 || tps->page->counter != 1 || tps->page == NULL){
+        printf("create page error at tps.c at line 132\n");
+        return -1;
     }
 
-    if (tps == NULL) {printf("tps is a null and enqueue in\n");}
     int check_enq = queue_enqueue(MMAPS, (void*)tps);
-    assert(check_enq == 0);
+    if (check_enq != 0)
+        return -1;
+
     exit_critical_section();
     return 0;
 }
@@ -91,7 +156,7 @@ int tps_destroy(void)
         return -1;
     }
 
-    int check_rmmap = munmap((void*)exist_tps->map_addr, MMAP_SIZE);
+    int check_rmmap = munmap((void*)exist_tps->page->map_addr, MMAP_SIZE);
     if(check_rmmap == -1){
         printf("removing map address fail tps.c : 79\n");
         return -1;
@@ -133,7 +198,9 @@ int tps_read(size_t offset, size_t length, char *buffer)
 
     /* Copies "numBytes" bytes from address "from" to address "to"
      * void * memcpy(void *to, const void *from, size_t numBytes); */
-    memcpy((void*)buffer, (void*)(exist_tps->map_addr + offset), length);
+    mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_READ);
+    memcpy((void*)buffer, (void*)(exist_tps->page->map_addr + offset), length);
+    mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_NONE);
     exit_critical_section();
     return 0;
 }
@@ -164,14 +231,11 @@ int tps_write(size_t offset, size_t length, char *buffer)
         return -1;
     }
 
-    //printf("going in memcpy\n");
-    //printf("printing lenght %zu\n", length);
-    //printf("printf buffer %s\n", buffer);
-
-
     /* Copies "numBytes" bytes from address "from" to address "to"
      * void * memcpy(void *to, const void *from, size_t numBytes); */
-    memcpy((void*)(exist_tps->map_addr + offset), (void*)buffer, length);
+    mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_WRITE);
+    memcpy((void*)(exist_tps->page->map_addr + offset), (void*)buffer, length);
+    mprotect(exist_tps->page->map_addr, TPS_SIZE, PROT_NONE);
     exit_critical_section();
     return 0;
 }
@@ -200,12 +264,20 @@ int tps_clone(pthread_t tid)
 
     /* after the condition of clone establish, do following... */
     cur_tps = malloc(sizeof(TPS));
-    cur_tps->map_addr = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
-                        MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (cur_tps->map_addr == MAP_FAILED)
-        return -1;
-    memcpy((void*)(cur_tps->map_addr), (void*)(target_tps->map_addr), MMAP_SIZE);
     cur_tps->tid = pthread_self();
+
+    int check_create = page_create(cur_tps);
+    if (check_create == -1 || cur_tps->page->counter != 1 || cur_tps->page->map_addr == NULL){
+        printf("create page error at tps.c at line 267\n");
+        return -1;
+    }
+
+    mprotect(target_tps->page->map_addr, TPS_SIZE, PROT_READ);
+    memcpy((void*)(cur_tps->page->map_addr), (void*)(target_tps->page->map_addr), MMAP_SIZE);
+    mprotect(cur_tps->page->map_addr, TPS_SIZE, PROT_NONE);
+    mprotect(target_tps->page->map_addr, TPS_SIZE, PROT_NONE);
+
+
     int check_cur = queue_enqueue(MMAPS, (void*)cur_tps);
     if (check_cur == -1){
         printf("enqueue fail tps.c : 168 \n");
