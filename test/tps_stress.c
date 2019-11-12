@@ -46,7 +46,9 @@ void *thread3(void* arg)
 
     printf("t3, tps_read, tps_clone, tps_write OK!\n");
     printf("thread3 create tps succeed\n");
-
+    
+    tps_destroy();
+    free(buffer);
     return NULL;
 }
 
@@ -70,6 +72,9 @@ void *thread2(void* arg)
 
     printf("t2, tps_read, tps_clone, tps_write OK!\n");
     printf("thread2 create tps succeed\n");
+    
+    tps_destroy();
+    free(buffer);
     return NULL;
 }
 

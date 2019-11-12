@@ -41,9 +41,9 @@ void *thread1(void* arg)
   	assert(!memcmp(msg, buffer, TPS_SIZE));
   	printf("thread1: read OK!\n");
 
-    /* test clone */
-    pthread_create(&tid2, NULL, thread2, NULL);
-    pthread_join(tid2, NULL);
+    	/* test clone */
+    	pthread_create(&tid2, NULL, thread2, NULL);
+    	pthread_join(tid2, NULL);
 
   	tps_destroy();
   	free(buffer);
@@ -56,5 +56,6 @@ int main()
   	tps_init(1);
   	pthread_create(&tid1, NULL, thread1, NULL);
   	pthread_join(tid1, NULL);
-  	return 0;
+  
+	return 0;
 }
