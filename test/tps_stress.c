@@ -75,15 +75,14 @@ void *thread2(void* arg)
 
 void *thread1(void* arg)
 {
-		char* buffer = malloc(TPS_SIZE);
-		int check_create = tps_create();
-		assert(check_create == 0);
+    char* buffer = malloc(TPS_SIZE);
+    int check_create = tps_create();
+    assert(check_create == 0);
+    tps_write(0, TPS_SIZE, msg);
+    memset(buffer, 0, TPS_SIZE);
 
-		tps_write(0, TPS_SIZE, msg);
-		memset(buffer, 0, TPS_SIZE);
-
-		tps_read(0, TPS_SIZE, buffer);
-		assert(!memcmp(msg, buffer, TPS_SIZE));
+    tps_read(0, TPS_SIZE, buffer);
+    assert(!memcmp(msg, buffer, TPS_SIZE));
 
     printf("t1, tps_write OK!\n");
     printf("t1, tps_read OK!\n");
@@ -92,9 +91,9 @@ void *thread1(void* arg)
     sem_down(sem1);
     /* come back from thread4 */
 
-		tps_destroy();
-		free(buffer);
-		return NULL;
+    tps_destroy();
+    free(buffer);
+    return NULL;
 }
 
 
@@ -103,16 +102,15 @@ int main()
     sem1 = sem_create(0);
     sem2 = sem_create(0);
     sem3 = sem_create(0);
+    tps_init(1);
 
-		tps_init(1);
-		pthread_create(&tid1, NULL, thread1, NULL);
+    pthread_create(&tid1, NULL, thread1, NULL);
     pthread_create(&tid2, NULL, thread2, NULL);
-    pthread_create(&tid3, NULL, thread3, NULL);
-		pthread_join(tid1, NULL);
+
+    pthread_join(tid1, NULL);
 
     sem_destroy(sem1);
     sem_destroy(sem2);
     sem_destroy(sem3);
-
-		return 0;
+    return 0;
 }
