@@ -6,7 +6,8 @@ programs := \
 	tps.x \
 	tps_test.x \
 	tps_clone_test.x \
-	tps_stress.x
+	tps_stress.x \
+	tps_test_seg.x
 
 # User-level thread library
 UTHREADLIB := libuthread
@@ -63,6 +64,8 @@ deps := $(patsubst %.o,%.d,$(objs))
 $(libuthread):
 	@echo "MAKE	$@"
 	$(Q)$(MAKE) V=$(V) D=$(D) -C $(UTHREADPATH)
+
+tps_test_seg.x: LDFLAGS += -Wl,--wrap=mmap
 
 # Generic rule for linking final applications
 %.x: %.o $(libuthread)
